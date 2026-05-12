@@ -20,7 +20,6 @@ from openpyxl import load_workbook
 
 BASE_DIR = Path(__file__).parent
 app = FastAPI(title="GSRTC Proposal Generator")
-app.mount("/static", StaticFiles(directory=BASE_DIR / "static"), name="static")
 templates = Jinja2Templates(directory=BASE_DIR / "templates")
 
 
