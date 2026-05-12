@@ -136,6 +136,81 @@ async def health():
     return {"status": "ok"}
 
 
+# ---------- Form-based download endpoint (works in mobile Safari) ----------
+# Mobile Safari doesn't reliably download files fetched via JS fetch + blob.
+# A native form POST that returns the file triggers Safari's normal download flow.
+
+import json as _json
+
+
+@app.post("/download/{kind}")
+async def download_file_form(kind: str,
+                             company: str = Form(""),
+                             client_name: str = Form(""),
+                             client_mobile: str = Form(""),
+                             client_email: str = Form(""),
+                             sender_name: str = Form(""),
+                             sender_mobile: str = Form(""),
+                             sender_email: str = Form(""),
+                             locations: str = Form("[]"),
+                             months: int = Form(1),
+                             spot_duration_sec: int = Form(10),
+                             location_overrides: str = Form("{}")):
+    """
+    Same as /generate/{kind} but accepts form-encoded data.
+    `locations` and `location_overrides` are JSON-encoded strings.
+    """
+    if kind not in ("pptx", "xlsx"):
+        raise HTTPException(404, "Unknown file kind")
+
+    if not client_name.strip() and not company.strip():
+        raise HTTPException(400, "Either company name or contact person is required")
+
+    try:
+        locations_list = _json.loads(locations) if locations else []
+        overrides_dict = _json.loads(location_overrides) if location_overrides else {}
+    except _json.JSONDecodeError:
+        raise HTTPException(400, "Invalid locations or overrides format")
+
+    if not locations_list:
+        raise HTTPException(400, "Select at least one location")
+
+    try:
+        if kind == "pptx":
+            data = generate_pptx(
+                client_name=client_name, company=company,
+                mobile=client_mobile, email=client_email,
+                selected_locations=locations_list,
+                sender_name=sender_name, sender_mobile=sender_mobile,
+                sender_email=sender_email,
+                months=months, spot_duration_sec=spot_duration_sec,
+            )
+            mime = "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+            prefix = "GSRTC_Proposal_"
+        else:
+            data = generate_xlsx(
+                client_name=client_name, company=company,
+                mobile=client_mobile, email=client_email,
+                selected_locations=locations_list,
+                sender_name=sender_name, sender_mobile=sender_mobile,
+                sender_email=sender_email,
+                months=months, spot_duration_sec=spot_duration_sec,
+                location_overrides=overrides_dict,
+            )
+            mime = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            prefix = "GSRTC_RateCard_"
+    except Exception as e:
+        raise HTTPException(500, f"Failed to generate {kind}: {e}")
+
+    base = company.strip() or client_name.strip() or "Client"
+    filename = f"{prefix}{sanitize_filename(base)}.{kind}"
+    return Response(
+        content=data,
+        media_type=mime,
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'}
+    )
+
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)

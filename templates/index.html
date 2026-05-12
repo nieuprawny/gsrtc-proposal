@@ -963,53 +963,50 @@ async function downloadFile(kind) {
   btn.classList.add('loading');
   btn.disabled = true;
 
+  // Use a hidden form POST. This is the only reliable way to trigger a
+  // download on mobile Safari for files larger than a few MB.
+  // Browser handles the file natively as if you clicked a download link.
   try {
-    const res = await fetch(`/generate/${kind}`, {
-      method: 'POST',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({
-        company: company,
-        client_name: name,
-        client_mobile: mobile,
-        client_email: email,
-        sender_name: senderName,
-        sender_mobile: senderMobile,
-        sender_email: senderEmail,
-        locations: locs,
-        months: months,
-        spot_duration_sec: spotDuration,
-        location_overrides: location_overrides,
-      })
-    });
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({detail: 'Unknown error'}));
-      throw new Error(err.detail || `HTTP ${res.status}`);
+    const form = document.createElement('form');
+    form.method = 'POST';
+    form.action = `/download/${kind}`;
+    form.style.display = 'none';
+    // Use _self so the page stays put and the download is triggered separately
+    form.target = '_self';
+
+    const fields = {
+      company, client_name: name, client_mobile: mobile, client_email: email,
+      sender_name: senderName, sender_mobile: senderMobile, sender_email: senderEmail,
+      locations: JSON.stringify(locs),
+      months: String(months),
+      spot_duration_sec: String(spotDuration),
+      location_overrides: JSON.stringify(location_overrides),
+    };
+    for (const [k, v] of Object.entries(fields)) {
+      const input = document.createElement('input');
+      input.type = 'hidden';
+      input.name = k;
+      input.value = v;
+      form.appendChild(input);
     }
 
-    const cd = res.headers.get('Content-Disposition') || '';
-    const match = cd.match(/filename="?([^"]+)"?/);
-    const filename = match ? match[1] : `proposal.${kind}`;
+    document.body.appendChild(form);
+    form.submit();
+    setTimeout(() => form.remove(), 1000);
 
-    const blob = await res.blob();
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = filename;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    URL.revokeObjectURL(url);
+    showToast(`${kind.toUpperCase()} download started`);
 
-    showToast(`${kind.toUpperCase()} downloaded`);
-
-    // Save client to the local database after a successful generation
+    // Save client to the local database after a successful trigger
     upsertClient({ company: company, name: name, mobile: mobile, email: email });
     setClientStatus('✓ Client saved for next time', 'saved');
   } catch (e) {
     showToast(e.message || 'Download failed', true);
   } finally {
-    btn.classList.remove('loading');
-    btn.disabled = false;
+    // Re-enable shortly after submission so user can trigger another
+    setTimeout(() => {
+      btn.classList.remove('loading');
+      btn.disabled = false;
+    }, 1500);
   }
 }
 
