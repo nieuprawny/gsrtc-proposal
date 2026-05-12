@@ -5,7 +5,6 @@ Serves the frontend UI and provides endpoints to generate PPT + Excel files.
 
 from fastapi import FastAPI, Request, Form, HTTPException
 from fastapi.responses import HTMLResponse, Response, FileResponse
-from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
 from typing import List
@@ -20,7 +19,6 @@ from openpyxl import load_workbook
 
 BASE_DIR = Path(__file__).parent
 app = FastAPI(title="GSRTC Proposal Generator")
-app.mount("/static", StaticFiles(directory=BASE_DIR / "static"), name="static")
 templates = Jinja2Templates(directory=BASE_DIR / "templates")
 
 
