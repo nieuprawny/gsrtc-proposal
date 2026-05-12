@@ -109,11 +109,79 @@
     border-radius: 6px;
     transition: border 0.15s, box-shadow 0.15s;
   }
-  .field input:focus {
+  .field input:focus, .field select:focus {
     outline: none;
     border-color: #C00000;
     box-shadow: 0 0 0 3px rgba(192,0,0,0.1);
   }
+  .field select {
+    width: 100%;
+    padding: 0.625rem 0.75rem;
+    font-size: 0.95rem;
+    border: 1px solid #d0d0d0;
+    border-radius: 6px;
+    background: #fff;
+    cursor: pointer;
+  }
+  .campaign-hint {
+    font-size: 0.78rem;
+    color: #888;
+    margin-top: 0.75rem;
+    font-style: italic;
+  }
+  .loc-price-row {
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+    margin-top: 0.2rem;
+  }
+  .loc-price-row .label {
+    font-weight: 700;
+    color: #C00000;
+    font-size: 0.95rem;
+  }
+  .loc-price-input {
+    flex: 1;
+    border: 1px solid #e0e0e0;
+    background: #fff;
+    padding: 0.25rem 0.4rem;
+    font-size: 0.9rem;
+    font-weight: 700;
+    color: #C00000;
+    border-radius: 4px;
+    width: 100%;
+    min-width: 0;
+    -moz-appearance: textfield;
+  }
+  .loc-price-input::-webkit-outer-spin-button,
+  .loc-price-input::-webkit-inner-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+  }
+  .loc-price-input.edited {
+    background: #fff8e0;
+    border-color: #d4a017;
+    color: #d4a017;
+  }
+  .loc-price-input:focus {
+    outline: none;
+    border-color: #C00000;
+    box-shadow: 0 0 0 2px rgba(192,0,0,0.1);
+  }
+  .loc-price-reset {
+    background: none;
+    border: none;
+    color: #999;
+    font-size: 1rem;
+    padding: 0 0.2rem;
+    cursor: pointer;
+    border-radius: 3px;
+    display: none;
+  }
+  .loc-price-input.edited + .loc-price-reset {
+    display: inline-block;
+  }
+  .loc-price-reset:hover { color: #C00000; background: #fee; }
   .field .required { color: #C00000; }
   .locations-toolbar {
     display: flex;
@@ -486,8 +554,8 @@
         <input id="company" type="text" placeholder="e.g. Sharma Industries Pvt Ltd">
       </div>
       <div class="field">
-        <label>Contact Person <span class="required">*</span></label>
-        <input id="clientName" type="text" placeholder="e.g. Anil Sharma" required>
+        <label>Contact Person</label>
+        <input id="clientName" type="text" placeholder="e.g. Anil Sharma">
       </div>
       <div class="field">
         <label>Mobile Number</label>
@@ -497,6 +565,29 @@
         <label>Email Address</label>
         <input id="clientEmail" type="email" placeholder="e.g. anil@example.com">
       </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Campaign Details</h2>
+    <div class="form-grid">
+      <div class="field">
+        <label>Number of Months</label>
+        <input id="months" type="number" min="1" max="24" value="1" oninput="updateSummary()">
+      </div>
+      <div class="field">
+        <label>Spot Duration</label>
+        <select id="spotDuration" onchange="updateSummary()">
+          <option value="10">10 Seconds</option>
+          <option value="15">15 Seconds</option>
+          <option value="20">20 Seconds</option>
+          <option value="25">25 Seconds</option>
+          <option value="30">30 Seconds</option>
+        </select>
+      </div>
+    </div>
+    <div class="campaign-hint">
+      Prices below show per-month at 10-second baseline. Total adjusts for months &amp; duration automatically.
     </div>
   </div>
 
@@ -514,14 +605,20 @@
 
     <div class="locations-grid">
     {% for loc in locations %}
-      <div class="location-card" data-name="{{ loc.name }}" onclick="toggleLocation(this)">
+      <div class="location-card" data-name="{{ loc.name }}" data-default-price="{{ loc.special_offer }}" onclick="toggleLocation(event, this)">
         <div class="loc-name">{{ loc.name }}</div>
         <div class="loc-meta">{{ loc.screens }} screens · {{ loc.unit_inch }} · Grade {{ loc.grade }}</div>
-        <div class="loc-price">
-          <span class="label">Special Offer:</span>
-          <span class="value">₹{{ "{:,}".format(loc.special_offer) }}</span>
+        <div class="loc-price-row">
+          <span class="label">₹</span>
+          <input class="loc-price-input" type="number" min="0"
+                 value="{{ loc.special_offer }}"
+                 data-default="{{ loc.special_offer }}"
+                 onclick="event.stopPropagation()"
+                 oninput="onPriceEdit(this)"
+                 title="Override the per-month base price (10-second baseline)">
+          <button class="loc-price-reset" onclick="resetPrice(event, this)" title="Reset to default">↺</button>
         </div>
-        <div class="loc-price-secondary">Regular: ₹{{ "{:,}".format(loc.total_month) }}</div>
+        <div class="loc-price-secondary">Default: ₹{{ "{:,}".format(loc.special_offer) }}</div>
       </div>
     {% endfor %}
     </div>
@@ -748,14 +845,40 @@ function selected() {
   return [...document.querySelectorAll('.location-card.selected')].map(c => c.dataset.name);
 }
 
-function updateSummary() {
-  const sel = selected();
-  document.getElementById('selCount').textContent = sel.length;
-  const total = sel.reduce((sum, name) => sum + (priceMap[name] || 0), 0);
-  document.getElementById('totalPrice').textContent = '₹' + total.toLocaleString('en-IN');
+function getCurrentPrice(card) {
+  const input = card.querySelector('.loc-price-input');
+  const val = parseFloat(input.value);
+  if (isNaN(val) || val < 0) return parseFloat(card.dataset.defaultPrice) || 0;
+  return val;
 }
 
-function toggleLocation(el) {
+function getMonths() {
+  const m = parseInt(document.getElementById('months').value, 10);
+  return (isNaN(m) || m < 1) ? 1 : m;
+}
+
+function getDurationMultiplier() {
+  const sec = parseInt(document.getElementById('spotDuration').value, 10);
+  return (isNaN(sec) || sec < 10) ? 1 : sec / 10;
+}
+
+function updateSummary() {
+  const cards = [...document.querySelectorAll('.location-card.selected')];
+  document.getElementById('selCount').textContent = cards.length;
+  const months = getMonths();
+  const durMult = getDurationMultiplier();
+  let total = 0;
+  cards.forEach(c => {
+    const basePrice = getCurrentPrice(c);
+    total += basePrice * months * durMult;
+  });
+  document.getElementById('totalPrice').textContent = '₹' + Math.round(total).toLocaleString('en-IN');
+}
+
+function toggleLocation(event, el) {
+  // Ignore clicks bubbling up from the price input/reset button
+  const tag = (event.target.tagName || '').toLowerCase();
+  if (tag === 'input' || tag === 'button') return;
   el.classList.toggle('selected');
   updateSummary();
 }
@@ -767,6 +890,26 @@ function selectAll() {
 
 function clearAll() {
   document.querySelectorAll('.location-card').forEach(c => c.classList.remove('selected'));
+  updateSummary();
+}
+
+function onPriceEdit(input) {
+  const def = parseFloat(input.dataset.default);
+  const cur = parseFloat(input.value);
+  if (!isNaN(cur) && cur !== def) {
+    input.classList.add('edited');
+  } else {
+    input.classList.remove('edited');
+  }
+  updateSummary();
+}
+
+function resetPrice(event, btn) {
+  event.stopPropagation();
+  const card = btn.closest('.location-card');
+  const input = card.querySelector('.loc-price-input');
+  input.value = input.dataset.default;
+  input.classList.remove('edited');
   updateSummary();
 }
 
@@ -786,10 +929,32 @@ async function downloadFile(kind) {
   const senderName = document.getElementById('senderName').value.trim();
   const senderMobile = document.getElementById('senderMobile').value.trim();
   const senderEmail = document.getElementById('senderEmail').value.trim();
-  const locs = selected();
+  const months = getMonths();
+  const spotDuration = parseInt(document.getElementById('spotDuration').value, 10) || 10;
 
-  if (!name) { showToast('Please enter contact person name', true); return; }
-  if (locs.length === 0) { showToast('Please select at least one location', true); return; }
+  const selectedCards = [...document.querySelectorAll('.location-card.selected')];
+  const locs = selectedCards.map(c => c.dataset.name);
+
+  // Build overrides for any selected card with an edited price
+  const location_overrides = {};
+  selectedCards.forEach(c => {
+    const input = c.querySelector('.loc-price-input');
+    if (input.classList.contains('edited')) {
+      const v = parseFloat(input.value);
+      if (!isNaN(v) && v >= 0) {
+        location_overrides[c.dataset.name] = v;
+      }
+    }
+  });
+
+  if (!company && !name) {
+    showToast('Please enter at least a company name or contact person', true);
+    return;
+  }
+  if (locs.length === 0) {
+    showToast('Please select at least one location', true);
+    return;
+  }
 
   // Save sender info on submit
   saveSenderInfo();
@@ -810,7 +975,10 @@ async function downloadFile(kind) {
         sender_name: senderName,
         sender_mobile: senderMobile,
         sender_email: senderEmail,
-        locations: locs
+        locations: locs,
+        months: months,
+        spot_duration_sec: spotDuration,
+        location_overrides: location_overrides,
       })
     });
     if (!res.ok) {
