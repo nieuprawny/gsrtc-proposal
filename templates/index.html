@@ -1,0 +1,858 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>GSRTC LED Screen — Proposal Generator</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Calibri, sans-serif;
+    background: #f5f5f5;
+    color: #1a1a1a;
+    line-height: 1.5;
+    padding: 0;
+  }
+  .header {
+    background: linear-gradient(135deg, #1a1a1a 0%, #2d2d2d 100%);
+    color: #fff;
+    padding: 1.5rem 2rem;
+    border-bottom: 4px solid #C00000;
+  }
+  .header h1 {
+    font-size: 1.5rem;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+  }
+  .header .subtitle {
+    font-size: 0.875rem;
+    color: #ccc;
+    margin-top: 0.25rem;
+  }
+  .container {
+    max-width: 1100px;
+    margin: 0 auto;
+    padding: 2rem 1rem;
+  }
+  .card {
+    background: #fff;
+    border-radius: 8px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+    padding: 1.5rem;
+    margin-bottom: 1.5rem;
+  }
+  .card h2 {
+    font-size: 1.125rem;
+    color: #C00000;
+    margin-bottom: 1rem;
+    font-weight: 700;
+    border-bottom: 2px solid #f0f0f0;
+    padding-bottom: 0.5rem;
+    display: flex;
+    align-items: baseline;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+  }
+  .card-hint {
+    font-size: 0.7rem;
+    font-weight: 400;
+    color: #888;
+    text-transform: none;
+    letter-spacing: 0;
+  }
+  .sender-card {
+    background: #fafafa;
+    border-left: 4px solid #C00000;
+  }
+  .sender-controls {
+    margin-top: 0.75rem;
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+  }
+  .sender-controls button {
+    background: none;
+    border: 1px solid #ccc;
+    color: #666;
+    padding: 0.3rem 0.7rem;
+    border-radius: 4px;
+    font-size: 0.75rem;
+    cursor: pointer;
+  }
+  .sender-controls button:hover { background: #eee; }
+  .save-indicator {
+    font-size: 0.75rem;
+    color: #2a7a2a;
+    opacity: 0;
+    transition: opacity 0.2s;
+  }
+  .save-indicator.show { opacity: 1; }
+  .form-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 1rem;
+  }
+  .field label {
+    display: block;
+    font-size: 0.8125rem;
+    font-weight: 600;
+    color: #555;
+    margin-bottom: 0.35rem;
+    text-transform: uppercase;
+    letter-spacing: 0.02em;
+  }
+  .field input {
+    width: 100%;
+    padding: 0.625rem 0.75rem;
+    font-size: 0.95rem;
+    border: 1px solid #d0d0d0;
+    border-radius: 6px;
+    transition: border 0.15s, box-shadow 0.15s;
+  }
+  .field input:focus {
+    outline: none;
+    border-color: #C00000;
+    box-shadow: 0 0 0 3px rgba(192,0,0,0.1);
+  }
+  .field .required { color: #C00000; }
+  .locations-toolbar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 1rem;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+  }
+  .selection-info {
+    font-size: 0.875rem;
+    color: #666;
+  }
+  .selection-info strong { color: #C00000; }
+  .toolbar-buttons button {
+    background: none;
+    border: 1px solid #d0d0d0;
+    color: #555;
+    padding: 0.4rem 0.75rem;
+    border-radius: 5px;
+    font-size: 0.8125rem;
+    cursor: pointer;
+    margin-left: 0.5rem;
+  }
+  .toolbar-buttons button:hover { background: #f0f0f0; }
+  .locations-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+    gap: 0.75rem;
+  }
+  .location-card {
+    border: 2px solid #e5e5e5;
+    border-radius: 8px;
+    padding: 0.875rem;
+    cursor: pointer;
+    transition: all 0.15s;
+    background: #fff;
+    user-select: none;
+    position: relative;
+  }
+  .location-card:hover {
+    border-color: #C00000;
+    transform: translateY(-1px);
+  }
+  .location-card.selected {
+    border-color: #C00000;
+    background: #fdf2f2;
+  }
+  .location-card.selected::before {
+    content: "✓";
+    position: absolute;
+    top: 6px;
+    right: 8px;
+    width: 22px;
+    height: 22px;
+    background: #C00000;
+    color: white;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.85rem;
+    font-weight: bold;
+  }
+  .loc-name {
+    font-weight: 700;
+    font-size: 1rem;
+    color: #1a1a1a;
+    margin-bottom: 0.25rem;
+  }
+  .loc-meta {
+    font-size: 0.75rem;
+    color: #888;
+    margin-bottom: 0.5rem;
+  }
+  .loc-price {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    font-size: 0.8125rem;
+  }
+  .loc-price .label { color: #666; }
+  .loc-price .value { font-weight: 700; color: #C00000; }
+  .loc-price-secondary {
+    font-size: 0.7rem;
+    color: #999;
+    text-decoration: line-through;
+    margin-top: 0.15rem;
+    text-align: right;
+  }
+  .actions {
+    position: sticky;
+    bottom: 0;
+    background: #fff;
+    border-top: 1px solid #e5e5e5;
+    padding: 1rem 1rem;
+    margin: 1.5rem -1rem -1rem;
+    border-radius: 0 0 8px 8px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+    justify-content: space-between;
+    align-items: center;
+  }
+  .summary-box {
+    font-size: 0.875rem;
+    color: #555;
+  }
+  .summary-box .total {
+    font-size: 1.125rem;
+    font-weight: 700;
+    color: #C00000;
+  }
+  .download-buttons {
+    display: flex;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+  }
+  .btn {
+    padding: 0.7rem 1.25rem;
+    font-size: 0.9rem;
+    font-weight: 600;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: all 0.15s;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+  }
+  .btn-primary {
+    background: #C00000;
+    color: #fff;
+  }
+  .btn-primary:hover { background: #a00000; }
+  .btn-secondary {
+    background: #1a1a1a;
+    color: #fff;
+  }
+  .btn-secondary:hover { background: #000; }
+  .btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+  .btn .spinner {
+    display: none;
+    width: 14px;
+    height: 14px;
+    border: 2px solid rgba(255,255,255,0.3);
+    border-top-color: #fff;
+    border-radius: 50%;
+    animation: spin 0.7s linear infinite;
+  }
+  .btn.loading .spinner { display: inline-block; }
+  .btn.loading .icon { display: none; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .toast {
+    position: fixed;
+    bottom: 1.5rem;
+    left: 50%;
+    transform: translateX(-50%);
+    background: #1a1a1a;
+    color: white;
+    padding: 0.8rem 1.2rem;
+    border-radius: 6px;
+    font-size: 0.875rem;
+    opacity: 0;
+    transition: opacity 0.2s;
+    pointer-events: none;
+    z-index: 100;
+  }
+  .toast.show { opacity: 1; }
+  .toast.error { background: #C00000; }
+
+  /* Saved clients picker */
+  .client-picker {
+    display: flex;
+    align-items: stretch;
+    gap: 0.5rem;
+    margin-bottom: 1rem;
+    position: relative;
+  }
+  .client-picker-input {
+    flex: 1;
+    position: relative;
+  }
+  .client-picker-input input {
+    width: 100%;
+    padding: 0.625rem 2.2rem 0.625rem 0.75rem;
+    font-size: 0.95rem;
+    border: 1px solid #d0d0d0;
+    border-radius: 6px;
+    background: #fff;
+  }
+  .client-picker-input input:focus {
+    outline: none;
+    border-color: #C00000;
+    box-shadow: 0 0 0 3px rgba(192,0,0,0.1);
+  }
+  .picker-arrow {
+    position: absolute;
+    right: 0.6rem;
+    top: 50%;
+    transform: translateY(-50%);
+    color: #888;
+    pointer-events: none;
+    font-size: 0.7rem;
+  }
+  .picker-dropdown {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    right: 0;
+    margin-top: 0.25rem;
+    background: #fff;
+    border: 1px solid #d0d0d0;
+    border-radius: 6px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+    max-height: 280px;
+    overflow-y: auto;
+    z-index: 50;
+    display: none;
+  }
+  .picker-dropdown.show { display: block; }
+  .picker-option {
+    padding: 0.6rem 0.75rem;
+    cursor: pointer;
+    border-bottom: 1px solid #f0f0f0;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 0.5rem;
+  }
+  .picker-option:hover { background: #fdf2f2; }
+  .picker-option:last-child { border-bottom: none; }
+  .picker-option-info {
+    flex: 1;
+    min-width: 0;
+  }
+  .picker-option-company {
+    font-weight: 600;
+    font-size: 0.9rem;
+    color: #1a1a1a;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .picker-option-meta {
+    font-size: 0.75rem;
+    color: #888;
+    margin-top: 0.15rem;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .picker-option-delete {
+    background: none;
+    border: none;
+    color: #999;
+    font-size: 1rem;
+    cursor: pointer;
+    padding: 0.2rem 0.5rem;
+    border-radius: 4px;
+  }
+  .picker-option-delete:hover { background: #fee; color: #C00000; }
+  .picker-empty {
+    padding: 1rem;
+    text-align: center;
+    color: #999;
+    font-size: 0.85rem;
+  }
+  .new-client-btn {
+    background: #fff;
+    border: 1px solid #d0d0d0;
+    color: #555;
+    padding: 0 1rem;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 0.85rem;
+    font-weight: 600;
+    white-space: nowrap;
+  }
+  .new-client-btn:hover {
+    background: #fdf2f2;
+    border-color: #C00000;
+    color: #C00000;
+  }
+  .client-status {
+    font-size: 0.8rem;
+    color: #888;
+    margin-top: -0.5rem;
+    margin-bottom: 1rem;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    min-height: 1.2rem;
+  }
+  .client-status.saved { color: #2a7a2a; }
+  .client-status.existing { color: #C07000; }
+
+  @media (max-width: 600px) {
+    .client-picker { flex-direction: column; }
+    .new-client-btn { padding: 0.5rem; }
+    .header { padding: 1rem; }
+    .header h1 { font-size: 1.125rem; }
+    .container { padding: 1rem 0.5rem; }
+    .card { padding: 1rem; }
+    .locations-grid { grid-template-columns: 1fr 1fr; gap: 0.5rem; }
+    .location-card { padding: 0.625rem; }
+    .loc-name { font-size: 0.9rem; }
+    .actions { flex-direction: column; align-items: stretch; }
+    .download-buttons { width: 100%; }
+    .btn { flex: 1; justify-content: center; }
+  }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>GSRTC LED Screen — Proposal Generator</h1>
+  <div class="subtitle">Customize and download client proposals in seconds</div>
+</div>
+
+<div class="container">
+
+  <div class="card sender-card">
+    <h2>
+      Prepared By (Your Details)
+      <span class="card-hint">Saved on this device · auto-fills next time</span>
+    </h2>
+    <div class="form-grid">
+      <div class="field">
+        <label>Your Name</label>
+        <input id="senderName" type="text" placeholder="e.g. Priya Patel">
+      </div>
+      <div class="field">
+        <label>Your Mobile</label>
+        <input id="senderMobile" type="tel" placeholder="e.g. 9988776655">
+      </div>
+      <div class="field">
+        <label>Your Email</label>
+        <input id="senderEmail" type="email" placeholder="e.g. priya@khushiooh.com">
+      </div>
+    </div>
+    <div class="sender-controls">
+      <button type="button" id="btnClearSender" onclick="clearSenderInfo()">Clear saved details</button>
+      <span class="save-indicator" id="saveIndicator"></span>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>
+      Prepared For (Client Details)
+      <span class="card-hint" id="clientCount"></span>
+    </h2>
+
+    <div class="client-picker">
+      <div class="client-picker-input">
+        <input id="clientSearch" type="text" placeholder="Search saved clients or type new..." autocomplete="off">
+        <span class="picker-arrow">▼</span>
+        <div class="picker-dropdown" id="pickerDropdown"></div>
+      </div>
+      <button type="button" class="new-client-btn" onclick="newClient()">+ New</button>
+    </div>
+    <div class="client-status" id="clientStatus"></div>
+
+    <div class="form-grid">
+      <div class="field">
+        <label>Company Name</label>
+        <input id="company" type="text" placeholder="e.g. Sharma Industries Pvt Ltd">
+      </div>
+      <div class="field">
+        <label>Contact Person <span class="required">*</span></label>
+        <input id="clientName" type="text" placeholder="e.g. Anil Sharma" required>
+      </div>
+      <div class="field">
+        <label>Mobile Number</label>
+        <input id="clientMobile" type="tel" placeholder="e.g. 9876543210">
+      </div>
+      <div class="field">
+        <label>Email Address</label>
+        <input id="clientEmail" type="email" placeholder="e.g. anil@example.com">
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Select Locations</h2>
+    <div class="locations-toolbar">
+      <div class="selection-info">
+        <strong id="selCount">0</strong> of {{ locations|length }} locations selected
+      </div>
+      <div class="toolbar-buttons">
+        <button type="button" onclick="selectAll()">Select All</button>
+        <button type="button" onclick="clearAll()">Clear</button>
+      </div>
+    </div>
+
+    <div class="locations-grid">
+    {% for loc in locations %}
+      <div class="location-card" data-name="{{ loc.name }}" onclick="toggleLocation(this)">
+        <div class="loc-name">{{ loc.name }}</div>
+        <div class="loc-meta">{{ loc.screens }} screens · {{ loc.unit_inch }} · Grade {{ loc.grade }}</div>
+        <div class="loc-price">
+          <span class="label">Special Offer:</span>
+          <span class="value">₹{{ "{:,}".format(loc.special_offer) }}</span>
+        </div>
+        <div class="loc-price-secondary">Regular: ₹{{ "{:,}".format(loc.total_month) }}</div>
+      </div>
+    {% endfor %}
+    </div>
+
+    <div class="actions">
+      <div class="summary-box">
+        Selected total: <span class="total" id="totalPrice">₹0</span>
+      </div>
+      <div class="download-buttons">
+        <button class="btn btn-secondary" id="btnExcel" onclick="downloadFile('xlsx')">
+          <span class="spinner"></span>
+          <span class="icon">📊</span>
+          Download Excel
+        </button>
+        <button class="btn btn-primary" id="btnPpt" onclick="downloadFile('pptx')">
+          <span class="spinner"></span>
+          <span class="icon">📑</span>
+          Download PPT
+        </button>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+const locationData = {{ locations|tojson }};
+const priceMap = {};
+locationData.forEach(l => { priceMap[l.name] = l.special_offer; });
+
+const SENDER_KEY = 'gsrtc_sender_info_v1';
+const CLIENTS_KEY = 'gsrtc_clients_v1';
+
+// ===== Client Database (localStorage) =====
+function loadClients() {
+  try {
+    const raw = localStorage.getItem(CLIENTS_KEY);
+    return raw ? JSON.parse(raw) : [];
+  } catch (e) { return []; }
+}
+
+function saveClients(clients) {
+  try {
+    localStorage.setItem(CLIENTS_KEY, JSON.stringify(clients));
+  } catch (e) { /* quota or disabled */ }
+}
+
+// Build a stable key for matching duplicates: lowercased company + person name
+function clientKey(c) {
+  return ((c.company || '') + '|' + (c.name || '')).toLowerCase().trim();
+}
+
+function upsertClient(client) {
+  // Skip if no real data
+  if (!client.name && !client.company) return;
+  const clients = loadClients();
+  const key = clientKey(client);
+  const idx = clients.findIndex(c => clientKey(c) === key);
+  const record = {
+    company: client.company || '',
+    name: client.name || '',
+    mobile: client.mobile || '',
+    email: client.email || '',
+    lastUsed: Date.now(),
+  };
+  if (idx >= 0) {
+    clients[idx] = record;
+  } else {
+    clients.push(record);
+  }
+  // Sort by lastUsed descending
+  clients.sort((a, b) => (b.lastUsed || 0) - (a.lastUsed || 0));
+  saveClients(clients);
+  updateClientCount();
+}
+
+function deleteClient(key, event) {
+  if (event) event.stopPropagation();
+  if (!confirm('Remove this client from saved list?')) return;
+  const clients = loadClients().filter(c => clientKey(c) !== key);
+  saveClients(clients);
+  renderDropdown('');
+  updateClientCount();
+  showToast('Client removed');
+}
+
+function updateClientCount() {
+  const n = loadClients().length;
+  const el = document.getElementById('clientCount');
+  if (el) el.textContent = n > 0 ? `${n} saved client${n === 1 ? '' : 's'}` : '';
+}
+
+function renderDropdown(filterText) {
+  const dropdown = document.getElementById('pickerDropdown');
+  const clients = loadClients();
+  const filter = (filterText || '').toLowerCase().trim();
+  const matching = clients.filter(c => {
+    if (!filter) return true;
+    return (c.company || '').toLowerCase().includes(filter) ||
+           (c.name || '').toLowerCase().includes(filter) ||
+           (c.mobile || '').includes(filter) ||
+           (c.email || '').toLowerCase().includes(filter);
+  });
+
+  if (matching.length === 0) {
+    dropdown.innerHTML = clients.length === 0
+      ? '<div class="picker-empty">No saved clients yet. Fill the form and generate a proposal — they\'ll be saved here.</div>'
+      : '<div class="picker-empty">No clients match your search</div>';
+    return;
+  }
+
+  dropdown.innerHTML = matching.map(c => {
+    const meta = [c.name, c.mobile, c.email].filter(Boolean).join(' · ');
+    const display = c.company || c.name;
+    return `
+      <div class="picker-option" onclick="selectClient('${escapeAttr(clientKey(c))}')">
+        <div class="picker-option-info">
+          <div class="picker-option-company">${escapeHtml(display)}</div>
+          <div class="picker-option-meta">${escapeHtml(meta)}</div>
+        </div>
+        <button class="picker-option-delete" onclick="deleteClient('${escapeAttr(clientKey(c))}', event)" title="Remove">✕</button>
+      </div>
+    `;
+  }).join('');
+}
+
+function escapeHtml(s) {
+  return String(s || '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+function escapeAttr(s) { return escapeHtml(s).replace(/'/g, '&#39;'); }
+
+function selectClient(key) {
+  const c = loadClients().find(x => clientKey(x) === key);
+  if (!c) return;
+  document.getElementById('company').value = c.company || '';
+  document.getElementById('clientName').value = c.name || '';
+  document.getElementById('clientMobile').value = c.mobile || '';
+  document.getElementById('clientEmail').value = c.email || '';
+  document.getElementById('clientSearch').value = c.company || c.name;
+  closeDropdown();
+  setClientStatus(`✓ Loaded existing client — edit any field if needed`, 'existing');
+}
+
+function newClient() {
+  document.getElementById('company').value = '';
+  document.getElementById('clientName').value = '';
+  document.getElementById('clientMobile').value = '';
+  document.getElementById('clientEmail').value = '';
+  document.getElementById('clientSearch').value = '';
+  setClientStatus('Filling out a new client', '');
+  document.getElementById('company').focus();
+  closeDropdown();
+}
+
+function setClientStatus(msg, kind) {
+  const el = document.getElementById('clientStatus');
+  el.textContent = msg || '';
+  el.className = 'client-status' + (kind ? ' ' + kind : '');
+}
+
+function closeDropdown() {
+  document.getElementById('pickerDropdown').classList.remove('show');
+}
+
+// Click outside to close
+document.addEventListener('click', (e) => {
+  const picker = document.querySelector('.client-picker');
+  if (picker && !picker.contains(e.target)) closeDropdown();
+});
+
+// Wire up search field
+document.getElementById('clientSearch').addEventListener('focus', () => {
+  renderDropdown(document.getElementById('clientSearch').value);
+  document.getElementById('pickerDropdown').classList.add('show');
+});
+document.getElementById('clientSearch').addEventListener('input', (e) => {
+  renderDropdown(e.target.value);
+  document.getElementById('pickerDropdown').classList.add('show');
+});
+
+// ===== Sender info (existing) =====
+function loadSenderInfo() {
+  try {
+    const saved = localStorage.getItem(SENDER_KEY);
+    if (!saved) return;
+    const data = JSON.parse(saved);
+    if (data.name) document.getElementById('senderName').value = data.name;
+    if (data.mobile) document.getElementById('senderMobile').value = data.mobile;
+    if (data.email) document.getElementById('senderEmail').value = data.email;
+  } catch (e) { /* ignore */ }
+}
+
+function saveSenderInfo() {
+  try {
+    const data = {
+      name: document.getElementById('senderName').value.trim(),
+      mobile: document.getElementById('senderMobile').value.trim(),
+      email: document.getElementById('senderEmail').value.trim(),
+    };
+    if (data.name || data.mobile || data.email) {
+      localStorage.setItem(SENDER_KEY, JSON.stringify(data));
+      const ind = document.getElementById('saveIndicator');
+      ind.textContent = '✓ Saved';
+      ind.classList.add('show');
+      setTimeout(() => ind.classList.remove('show'), 1500);
+    }
+  } catch (e) { /* ignore */ }
+}
+
+function clearSenderInfo() {
+  if (!confirm('Clear your saved details from this device?')) return;
+  try {
+    localStorage.removeItem(SENDER_KEY);
+    document.getElementById('senderName').value = '';
+    document.getElementById('senderMobile').value = '';
+    document.getElementById('senderEmail').value = '';
+    showToast('Saved details cleared');
+  } catch (e) { /* ignore */ }
+}
+
+function selected() {
+  return [...document.querySelectorAll('.location-card.selected')].map(c => c.dataset.name);
+}
+
+function updateSummary() {
+  const sel = selected();
+  document.getElementById('selCount').textContent = sel.length;
+  const total = sel.reduce((sum, name) => sum + (priceMap[name] || 0), 0);
+  document.getElementById('totalPrice').textContent = '₹' + total.toLocaleString('en-IN');
+}
+
+function toggleLocation(el) {
+  el.classList.toggle('selected');
+  updateSummary();
+}
+
+function selectAll() {
+  document.querySelectorAll('.location-card').forEach(c => c.classList.add('selected'));
+  updateSummary();
+}
+
+function clearAll() {
+  document.querySelectorAll('.location-card').forEach(c => c.classList.remove('selected'));
+  updateSummary();
+}
+
+function showToast(msg, isError) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.toggle('error', !!isError);
+  t.classList.add('show');
+  setTimeout(() => t.classList.remove('show'), 3000);
+}
+
+async function downloadFile(kind) {
+  const company = document.getElementById('company').value.trim();
+  const name = document.getElementById('clientName').value.trim();
+  const mobile = document.getElementById('clientMobile').value.trim();
+  const email = document.getElementById('clientEmail').value.trim();
+  const senderName = document.getElementById('senderName').value.trim();
+  const senderMobile = document.getElementById('senderMobile').value.trim();
+  const senderEmail = document.getElementById('senderEmail').value.trim();
+  const locs = selected();
+
+  if (!name) { showToast('Please enter contact person name', true); return; }
+  if (locs.length === 0) { showToast('Please select at least one location', true); return; }
+
+  // Save sender info on submit
+  saveSenderInfo();
+
+  const btn = document.getElementById(kind === 'pptx' ? 'btnPpt' : 'btnExcel');
+  btn.classList.add('loading');
+  btn.disabled = true;
+
+  try {
+    const res = await fetch(`/generate/${kind}`, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({
+        company: company,
+        client_name: name,
+        client_mobile: mobile,
+        client_email: email,
+        sender_name: senderName,
+        sender_mobile: senderMobile,
+        sender_email: senderEmail,
+        locations: locs
+      })
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({detail: 'Unknown error'}));
+      throw new Error(err.detail || `HTTP ${res.status}`);
+    }
+
+    const cd = res.headers.get('Content-Disposition') || '';
+    const match = cd.match(/filename="?([^"]+)"?/);
+    const filename = match ? match[1] : `proposal.${kind}`;
+
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+
+    showToast(`${kind.toUpperCase()} downloaded`);
+
+    // Save client to the local database after a successful generation
+    upsertClient({ company: company, name: name, mobile: mobile, email: email });
+    setClientStatus('✓ Client saved for next time', 'saved');
+  } catch (e) {
+    showToast(e.message || 'Download failed', true);
+  } finally {
+    btn.classList.remove('loading');
+    btn.disabled = false;
+  }
+}
+
+// Wire up sender field auto-save on blur
+['senderName', 'senderMobile', 'senderEmail'].forEach(id => {
+  document.getElementById(id).addEventListener('blur', saveSenderInfo);
+});
+
+loadSenderInfo();
+updateSummary();
+updateClientCount();
+</script>
+</body>
+</html>
