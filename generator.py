@@ -158,7 +158,8 @@ def _copy_relationships(src_slide, new_slide):
 def _replace_sample_text_with_client_info(prs: Presentation, client_name: str,
                                           company: str, mobile: str, email: str,
                                           sender_name: str = "", sender_mobile: str = "",
-                                          sender_email: str = ""):
+                                          sender_email: str = "",
+                                          months: int = 1, spot_duration_sec: int = 10):
     """
     On slide 2 of the KHUSHI template, replace 'SAMPLE TEXT' with a 'Prepared for:'
     block listing company, contact person, mobile, email, followed by a
@@ -218,17 +219,24 @@ def _replace_sample_text_with_client_info(prs: Presentation, client_name: str,
     if email.strip():
         lines.append((f"Email: {email.strip()}", 15, False, MED_GREY))
 
+    # Campaign details block (always shown)
+    lines.append(("", 8, False, MED_GREY))  # spacer
+    lines.append(("Campaign Details:", 18, True, BRAND_RED))
+    month_label = f"{months} Month{'s' if months > 1 else ''}"
+    lines.append((f"Duration: {month_label}", 14, True, BLACK))
+    lines.append((f"Spot Length: {spot_duration_sec} Seconds", 14, True, BLACK))
+
     # Spacer line
     has_sender = any([sender_name.strip(), sender_mobile.strip(), sender_email.strip()])
     if has_sender:
-        lines.append(("", 10, False, MED_GREY))  # spacer
-        lines.append(("Prepared by:", 20, True, BRAND_RED))
+        lines.append(("", 8, False, MED_GREY))  # spacer
+        lines.append(("Prepared by:", 18, True, BRAND_RED))
         if sender_name.strip():
-            lines.append((sender_name.strip(), 18, True, BLACK))
+            lines.append((sender_name.strip(), 16, True, BLACK))
         if sender_mobile.strip():
-            lines.append((f"Mobile: {sender_mobile.strip()}", 15, False, MED_GREY))
+            lines.append((f"Mobile: {sender_mobile.strip()}", 13, False, MED_GREY))
         if sender_email.strip():
-            lines.append((f"Email: {sender_email.strip()}", 15, False, MED_GREY))
+            lines.append((f"Email: {sender_email.strip()}", 13, False, MED_GREY))
 
     # Clear & rebuild
     tf.clear()
@@ -303,7 +311,8 @@ def _renumber_slide_parts(prs: Presentation):
 def generate_pptx(client_name: str, company: str, mobile: str, email: str,
                   selected_locations: List[str],
                   sender_name: str = "", sender_mobile: str = "",
-                  sender_email: str = "") -> bytes:
+                  sender_email: str = "",
+                  months: int = 1, spot_duration_sec: int = 10) -> bytes:
     selected_set = {loc.upper() for loc in selected_locations}
     invalid = selected_set - set(LOCATION_SLIDE_MAP.keys())
     if invalid:
@@ -317,6 +326,7 @@ def generate_pptx(client_name: str, company: str, mobile: str, email: str,
     _replace_sample_text_with_client_info(
         khushi, client_name, company, mobile, email,
         sender_name, sender_mobile, sender_email,
+        months, spot_duration_sec,
     )
 
     # Step 2: Delete the blank slide 3 (index 2). Thank-you slide now at index 2.
@@ -353,21 +363,74 @@ def generate_pptx(client_name: str, company: str, mobile: str, email: str,
 def generate_xlsx(client_name: str, company: str, mobile: str, email: str,
                   selected_locations: List[str],
                   sender_name: str = "", sender_mobile: str = "",
-                  sender_email: str = "") -> bytes:
-    selected_set = {loc.upper() for loc in selected_locations}
+                  sender_email: str = "",
+                  months: int = 1, spot_duration_sec: int = 10,
+                  location_overrides: dict = None) -> bytes:
+    """
+    Generate an Excel rate card.
 
-    wb = load_workbook(str(RATECARD))
+    months: number of campaign months. Multiplies spots/month, total/month, and offer price.
+    spot_duration_sec: 10, 15, 20, 25, or 30. Price scales linearly from 10s baseline.
+    location_overrides: optional {LOCATION_NAME: override_offer_price_per_month_base}
+        — overrides the per-month, 10-second baseline price. Months/duration multipliers
+        still apply on top.
+    """
+    selected_set = {loc.upper() for loc in selected_locations}
+    location_overrides = location_overrides or {}
+
+    # Multipliers
+    if months < 1:
+        months = 1
+    if spot_duration_sec not in (10, 15, 20, 25, 30):
+        spot_duration_sec = 10
+    duration_multiplier = spot_duration_sec / 10.0  # 10s = 1x, 20s = 2x, 30s = 3x
+
+    wb = load_workbook(str(RATECARD), data_only=True)
     ws = wb["Sheet1"]
     header_row = [c.value for c in ws[1]]
 
+    # Read each selected row, compute the effective values applying overrides and multipliers
     selected_rows_data = []
     for loc in LOCATIONS_IN_ORDER:
-        if loc in selected_set:
-            row_idx = LOCATION_EXCEL_ROW[loc]
-            row_data = []
-            for c in range(1, len(header_row) + 1):
-                row_data.append(ws.cell(row=row_idx, column=c).value)
-            selected_rows_data.append((row_idx, row_data))
+        if loc not in selected_set:
+            continue
+        row_idx = LOCATION_EXCEL_ROW[loc]
+        # Read base values (col indices 1-based)
+        sr_no = ws.cell(row=row_idx, column=1).value
+        name = ws.cell(row=row_idx, column=2).value
+        unit_inch = ws.cell(row=row_idx, column=3).value
+        grade = ws.cell(row=row_idx, column=4).value
+        screens = ws.cell(row=row_idx, column=5).value or 0
+        spots_per_day_base = ws.cell(row=row_idx, column=6).value or 0
+        # duration is col 7 — replace
+        per_slot_rate_base = ws.cell(row=row_idx, column=8).value or 0  # 10s baseline
+        campaign_days = ws.cell(row=row_idx, column=9).value or 30
+        loop_time = ws.cell(row=row_idx, column=11).value
+        total_per_month_base = ws.cell(row=row_idx, column=12).value or 0  # 10s baseline
+        offer_base = ws.cell(row=row_idx, column=13).value or 0  # 10s baseline
+
+        # Apply overrides — override replaces the 10-sec baseline offer price
+        if loc in location_overrides:
+            try:
+                offer_base = float(location_overrides[loc])
+            except (TypeError, ValueError):
+                pass
+
+        # Compute final values
+        spots_per_month = spots_per_day_base * screens * campaign_days * months
+        per_slot_rate_final = per_slot_rate_base * duration_multiplier
+        total_per_month_final = total_per_month_base * duration_multiplier * months
+        offer_final = offer_base * duration_multiplier * months
+
+        row_data = [
+            sr_no, name, unit_inch, grade, screens, spots_per_day_base,
+            f"{spot_duration_sec} Sec",
+            round(per_slot_rate_final, 2), campaign_days,
+            spots_per_month, loop_time,
+            round(total_per_month_final, 2),
+            round(offer_final, 2),
+        ]
+        selected_rows_data.append(row_data)
 
     new_wb = Workbook()
     new_ws = new_wb.active
@@ -379,6 +442,8 @@ def generate_xlsx(client_name: str, company: str, mobile: str, email: str,
     light_fill = PatternFill("solid", fgColor="FCE4E4")
     sender_fill = PatternFill("solid", fgColor="F0F0F0")
     grey_fill = PatternFill("solid", fgColor="D9D9D9")
+    gst_fill = PatternFill("solid", fgColor="FFF4E0")
+    grand_fill = PatternFill("solid", fgColor="C00000")
     white_font = Font(name="Calibri", size=12, bold=True, color="FFFFFF")
 
     new_ws["A1"] = "GSRTC LED SCREEN PROPOSAL"
@@ -389,7 +454,6 @@ def generate_xlsx(client_name: str, company: str, mobile: str, email: str,
     new_ws.row_dimensions[1].height = 36
 
     # --- Prepared For block ---
-    # Use B for label, C-G for value (left side), H for label, I-M for value (right side)
     new_ws["A2"] = "PREPARED FOR"
     new_ws["A2"].font = Font(name="Calibri", size=13, bold=True, color="C00000")
     new_ws["A2"].fill = light_fill
@@ -397,10 +461,8 @@ def generate_xlsx(client_name: str, company: str, mobile: str, email: str,
     new_ws.merge_cells("A2:M2")
     new_ws.row_dimensions[2].height = 24
 
-    # Row 3: Company | Contact Person
     new_ws["A3"] = "Company:";        new_ws["C3"] = company
     new_ws["H3"] = "Contact Person:"; new_ws["J3"] = client_name
-    # Row 4: Mobile | Email
     new_ws["A4"] = "Mobile:";         new_ws["C4"] = mobile
     new_ws["H4"] = "Email:";          new_ws["J4"] = email
 
@@ -419,7 +481,6 @@ def generate_xlsx(client_name: str, company: str, mobile: str, email: str,
     new_ws.row_dimensions[3].height = 22
     new_ws.row_dimensions[4].height = 22
 
-    # --- Prepared By block ---
     has_sender = any([sender_name.strip(), sender_mobile.strip(), sender_email.strip()])
     if has_sender:
         new_ws["A5"] = "PREPARED BY"
@@ -446,9 +507,42 @@ def generate_xlsx(client_name: str, company: str, mobile: str, email: str,
         new_ws.merge_cells("A7:B7"); new_ws.merge_cells("C7:M7")
         new_ws.row_dimensions[6].height = 22
         new_ws.row_dimensions[7].height = 22
-        header_row_num = 9
+        next_row = 8
     else:
-        header_row_num = 6
+        next_row = 5
+
+    # --- Campaign details block (months + duration) ---
+    new_ws.cell(row=next_row, column=1, value="CAMPAIGN DETAILS")
+    cell = new_ws.cell(row=next_row, column=1)
+    cell.font = Font(name="Calibri", size=13, bold=True, color="C00000")
+    cell.fill = light_fill
+    cell.alignment = Alignment(horizontal="left", vertical="center", indent=1)
+    new_ws.merge_cells(start_row=next_row, start_column=1, end_row=next_row, end_column=13)
+    new_ws.row_dimensions[next_row].height = 24
+    next_row += 1
+
+    new_ws.cell(row=next_row, column=1, value="Duration:")
+    new_ws.cell(row=next_row, column=3, value=f"{months} Month{'s' if months > 1 else ''}")
+    new_ws.cell(row=next_row, column=8, value="Spot Length:")
+    new_ws.cell(row=next_row, column=10, value=f"{spot_duration_sec} Seconds")
+    for c in ["A", "H"]:
+        cell = new_ws[f"{c}{next_row}"]
+        cell.font = Font(name="Calibri", size=12, bold=True)
+        cell.fill = light_fill
+        cell.alignment = Alignment(horizontal="left", vertical="center", indent=1)
+    for c in ["C", "J"]:
+        cell = new_ws[f"{c}{next_row}"]
+        cell.font = Font(name="Calibri", size=12, bold=True, color="C00000")
+        cell.alignment = Alignment(horizontal="left", vertical="center")
+    new_ws.merge_cells(start_row=next_row, start_column=1, end_row=next_row, end_column=2)
+    new_ws.merge_cells(start_row=next_row, start_column=3, end_row=next_row, end_column=7)
+    new_ws.merge_cells(start_row=next_row, start_column=8, end_row=next_row, end_column=9)
+    new_ws.merge_cells(start_row=next_row, start_column=10, end_row=next_row, end_column=13)
+    new_ws.row_dimensions[next_row].height = 22
+    next_row += 1
+
+    # --- Rate card header ---
+    header_row_num = next_row + 1  # one blank row spacer
 
     for col_idx, header in enumerate(header_row, start=1):
         cell = new_ws.cell(row=header_row_num, column=col_idx, value=header)
@@ -459,20 +553,15 @@ def generate_xlsx(client_name: str, company: str, mobile: str, email: str,
     new_ws.row_dimensions[header_row_num].height = 40
 
     current_row = header_row_num + 1
-    for original_row_idx, row_data in selected_rows_data:
+    for row_data in selected_rows_data:
         for col_idx, value in enumerate(row_data, start=1):
-            if isinstance(value, str) and value.startswith("="):
-                value = re.sub(
-                    rf'([A-Z]+){original_row_idx}\b',
-                    rf'\g<1>{current_row}',
-                    value
-                )
             cell = new_ws.cell(row=current_row, column=col_idx, value=value)
             cell.font = Font(name="Calibri", size=11)
             cell.alignment = Alignment(horizontal="center", vertical="center")
             cell.border = border
         current_row += 1
 
+    # --- TOTAL row ---
     total_row = current_row
     new_ws.cell(row=total_row, column=2, value="TOTAL")
     new_ws.cell(row=total_row, column=2).font = Font(name="Calibri", size=12, bold=True)
@@ -493,12 +582,67 @@ def generate_xlsx(client_name: str, company: str, mobile: str, email: str,
             cell.value = f"=SUM({col_letter}{first_data_row}:{col_letter}{last_data_row})"
             cell.font = Font(name="Calibri", size=12, bold=True)
 
-    widths = {"A": 6, "B": 22, "C": 10, "D": 8, "E": 16, "F": 14, "G": 12,
+    # --- Subtotal + GST + Grand Total (based on the Special Offer Price column M) ---
+    subtotal_row = total_row + 1
+    gst_row = total_row + 2
+    grand_row = total_row + 3
+
+    offer_col_letter = "M"  # Special Offer Price column
+
+    # Subtotal (Offer Price total)
+    new_ws.cell(row=subtotal_row, column=11, value="Subtotal:")
+    new_ws.cell(row=subtotal_row, column=12, value=f"=SUM({offer_col_letter}{first_data_row}:{offer_col_letter}{last_data_row})")
+    new_ws.merge_cells(start_row=subtotal_row, start_column=11, end_row=subtotal_row, end_column=12)
+    new_ws.cell(row=subtotal_row, column=11).alignment = Alignment(horizontal="right", vertical="center", indent=1)
+    new_ws.cell(row=subtotal_row, column=11).font = Font(name="Calibri", size=12, bold=True)
+    new_ws.cell(row=subtotal_row, column=11).fill = gst_fill
+    new_ws.cell(row=subtotal_row, column=11).border = border
+    new_ws.cell(row=subtotal_row, column=12).border = border
+    new_ws.cell(row=subtotal_row, column=13).fill = gst_fill
+    new_ws.cell(row=subtotal_row, column=13).font = Font(name="Calibri", size=12, bold=True)
+    new_ws.cell(row=subtotal_row, column=13).alignment = Alignment(horizontal="center", vertical="center")
+    new_ws.cell(row=subtotal_row, column=13).border = border
+    new_ws.cell(row=subtotal_row, column=13).value = f"=SUM({offer_col_letter}{first_data_row}:{offer_col_letter}{last_data_row})"
+    # Apply fill to merged cells
+    for c in range(11, 13):
+        new_ws.cell(row=subtotal_row, column=c).fill = gst_fill
+        new_ws.cell(row=subtotal_row, column=c).font = Font(name="Calibri", size=12, bold=True)
+    new_ws.row_dimensions[subtotal_row].height = 22
+
+    # GST 18%
+    new_ws.cell(row=gst_row, column=11, value="GST @ 18%:")
+    new_ws.cell(row=gst_row, column=13, value=f"=M{subtotal_row}*0.18")
+    new_ws.merge_cells(start_row=gst_row, start_column=11, end_row=gst_row, end_column=12)
+    for c in range(11, 14):
+        cell = new_ws.cell(row=gst_row, column=c)
+        cell.fill = gst_fill
+        cell.font = Font(name="Calibri", size=12, bold=True)
+        cell.border = border
+    new_ws.cell(row=gst_row, column=11).alignment = Alignment(horizontal="right", vertical="center", indent=1)
+    new_ws.cell(row=gst_row, column=13).alignment = Alignment(horizontal="center", vertical="center")
+    new_ws.row_dimensions[gst_row].height = 22
+
+    # Grand Total
+    new_ws.cell(row=grand_row, column=11, value="GRAND TOTAL:")
+    new_ws.cell(row=grand_row, column=13, value=f"=M{subtotal_row}+M{gst_row}")
+    new_ws.merge_cells(start_row=grand_row, start_column=11, end_row=grand_row, end_column=12)
+    for c in range(11, 14):
+        cell = new_ws.cell(row=grand_row, column=c)
+        cell.fill = grand_fill
+        cell.font = Font(name="Calibri", size=13, bold=True, color="FFFFFF")
+        cell.border = border
+    new_ws.cell(row=grand_row, column=11).alignment = Alignment(horizontal="right", vertical="center", indent=1)
+    new_ws.cell(row=grand_row, column=13).alignment = Alignment(horizontal="center", vertical="center")
+    new_ws.row_dimensions[grand_row].height = 28
+
+    # Reference for T&C below
+    total_row = grand_row  # so T&C section places below grand total
+
+    widths = {"A": 6, "B": 22, "C": 10, "D": 8, "E": 12, "F": 14, "G": 12,
               "H": 12, "I": 14, "J": 14, "K": 10, "L": 16, "M": 18}
     for col, w in widths.items():
         new_ws.column_dimensions[col].width = w
 
-    # Page setup so the file prints/PDFs cleanly fitting one page wide (landscape)
     new_ws.page_setup.orientation = new_ws.ORIENTATION_LANDSCAPE
     new_ws.page_setup.fitToWidth = 1
     new_ws.page_setup.fitToHeight = 0
@@ -568,6 +712,7 @@ def generate_xlsx(client_name: str, company: str, mobile: str, email: str,
 
 if __name__ == "__main__":
     test_locations = ["ANAND", "GANDHINAGAR", "SURAT"]
+    overrides = {"ANAND": 12000}  # client got a small discount on Anand
     print("Generating test PPT...")
     pptx_bytes = generate_pptx(
         client_name="Anil Sharma",
@@ -578,6 +723,8 @@ if __name__ == "__main__":
         sender_name="Priya Patel",
         sender_mobile="9988776655",
         sender_email="priya@khushiooh.com",
+        months=3,
+        spot_duration_sec=20,
     )
     Path("/tmp/test_out.pptx").write_bytes(pptx_bytes)
     print(f"  PPT size: {len(pptx_bytes):,} bytes")
@@ -592,6 +739,9 @@ if __name__ == "__main__":
         sender_name="Priya Patel",
         sender_mobile="9988776655",
         sender_email="priya@khushiooh.com",
+        months=3,
+        spot_duration_sec=20,
+        location_overrides=overrides,
     )
     Path("/tmp/test_out.xlsx").write_bytes(xlsx_bytes)
     print(f"  Excel size: {len(xlsx_bytes):,} bytes")
