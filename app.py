@@ -20,6 +20,7 @@ from openpyxl import load_workbook
 
 BASE_DIR = Path(__file__).parent
 app = FastAPI(title="GSRTC Proposal Generator")
+app.mount("/static", StaticFiles(directory=BASE_DIR / "static"), name="static")
 templates = Jinja2Templates(directory=BASE_DIR / "templates")
 
 
@@ -54,19 +55,23 @@ async def home(request: Request):
 
 class ProposalRequest(BaseModel):
     company: str = ""
-    client_name: str
+    client_name: str = ""
     client_mobile: str = ""
     client_email: str = ""
     sender_name: str = ""
     sender_mobile: str = ""
     sender_email: str = ""
     locations: List[str]
+    months: int = 1
+    spot_duration_sec: int = 10
+    location_overrides: dict = {}
 
 
 @app.post("/generate/pptx")
 async def gen_pptx(req: ProposalRequest):
-    if not req.client_name.strip():
-        raise HTTPException(400, "Client name is required")
+    # Require at least company OR client name
+    if not req.client_name.strip() and not req.company.strip():
+        raise HTTPException(400, "Either company name or contact person is required")
     if not req.locations:
         raise HTTPException(400, "Select at least one location")
 
@@ -80,11 +85,13 @@ async def gen_pptx(req: ProposalRequest):
             sender_name=req.sender_name,
             sender_mobile=req.sender_mobile,
             sender_email=req.sender_email,
+            months=req.months,
+            spot_duration_sec=req.spot_duration_sec,
         )
     except Exception as e:
         raise HTTPException(500, f"Failed to generate PPT: {e}")
 
-    base = req.company.strip() or req.client_name
+    base = req.company.strip() or req.client_name.strip() or "Client"
     filename = f"GSRTC_Proposal_{sanitize_filename(base)}.pptx"
     return Response(
         content=data,
@@ -95,8 +102,8 @@ async def gen_pptx(req: ProposalRequest):
 
 @app.post("/generate/xlsx")
 async def gen_xlsx(req: ProposalRequest):
-    if not req.client_name.strip():
-        raise HTTPException(400, "Client name is required")
+    if not req.client_name.strip() and not req.company.strip():
+        raise HTTPException(400, "Either company name or contact person is required")
     if not req.locations:
         raise HTTPException(400, "Select at least one location")
 
@@ -110,11 +117,14 @@ async def gen_xlsx(req: ProposalRequest):
             sender_name=req.sender_name,
             sender_mobile=req.sender_mobile,
             sender_email=req.sender_email,
+            months=req.months,
+            spot_duration_sec=req.spot_duration_sec,
+            location_overrides=req.location_overrides,
         )
     except Exception as e:
         raise HTTPException(500, f"Failed to generate Excel: {e}")
 
-    base = req.company.strip() or req.client_name
+    base = req.company.strip() or req.client_name.strip() or "Client"
     filename = f"GSRTC_RateCard_{sanitize_filename(base)}.xlsx"
     return Response(
         content=data,
